@@ -1,0 +1,22 @@
+{
+  "name": "personal-llama",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "chalk": "^5.4.1",
+    "minimist": "^1.2.8",
+    "nanoid": "^5.1.5",
+    "ollama": "^0.5.16",
+    "sqlite": "^5.1.1",
+    "sqlite3": "^5.1.7"
+  }
+}
