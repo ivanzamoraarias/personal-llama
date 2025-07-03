@@ -13,6 +13,7 @@
   "description": "",
   "dependencies": {
     "chalk": "^5.4.1",
+    "handlebars": "^4.7.8",
     "minimist": "^1.2.8",
     "nanoid": "^5.1.5",
     "ollama": "^0.5.16",
