@@ -34,8 +34,8 @@ npm start -- --client "john"
 
 ### Framewotk configuraation
 
-/**
- * This module manages user-specific data and templates.
+
+ This module manages user-specific data and templates.
  
   ## Users Folder Structure
  
