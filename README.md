@@ -36,30 +36,30 @@ npm start -- --client "john"
 
 /**
  * This module manages user-specific data and templates.
- *
- * ## Users Folder Structure
- *
+ 
+  ## Users Folder Structure
+ 
  * The `users` folder is designed to store individual user data. For each user, a separate subfolder must be created inside the `users` directory. The name of the subfolder should match the username (e.g., for a user named "John", create a folder named `john` inside `users`).
- *
+ 
  * Each user folder must contain the following files:
- *
- * - `env.json`: Contains environment-specific configuration and settings for the user.
- * - `personal.sqlite`: A SQLite database file that stores the user's personal data.
- * - `template.hbs`: A Handlebars template file used to generate prompts or other user-specific content.
+ 
+  - `env.json`: Contains environment-specific configuration and settings for the user.
+  - `personal.sqlite`: A SQLite database file that stores the user's personal data.
+  - `template.hbs`: A Handlebars template file used to generate prompts or other user-specific content.
  *
  * ### Example Structure
- *
- * ```
- * users/
- *   john/
- *     env.json
- *     personal.sqlite
- *     template.hbs
- *   alice/
- *     env.json
- *     personal.sqlite
- *     template.hbs
- * ```
- *
+ 
+  ```
+  users/
+    john/
+      env.json
+      personal.sqlite
+      template.hbs
+    alice/
+      env.json
+      personal.sqlite
+      template.hbs
+  ```
+ 
  * To add a new user, simply create a new folder with the username under `users` and include the required files.
  */
