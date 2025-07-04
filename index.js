@@ -9,6 +9,8 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import Handlebars from 'handlebars';
+import amqplib from 'amqplib';
+
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -16,8 +18,27 @@ const __dirname = path.dirname(__filename);
 const USERS_BASE_DIR = path.join(__dirname, 'users');
 
 const PERSONAL_DATABASE_FILE = 'personal.sqlite';
+const MESSAGES_DATABASE_FILE = 'messages.sqlite';
 
+const UPDATE_MESSAGES_QUEUE_URL = 'amqp://localhost';
+const UPDATE_MESSAGES_QUEUE_NAME = 'myQueue';
+const OLLAMA_URL = 'http://localhost:11434';
 
+async function sendMessageToQueue(message) {
+  try {
+    const connection = await amqplib.connect(UPDATE_MESSAGES_QUEUE_URL);
+    const channel = await connection.createChannel();
+  
+    await channel.assertQueue(UPDATE_MESSAGES_QUEUE_NAME, { durable: false });
+    channel.sendToQueue(UPDATE_MESSAGES_QUEUE_NAME, Buffer.from(JSON.stringify(message)));
+  
+    console.log('✅ Message sent:', message);
+    await channel.close();
+    await connection.close();
+  } catch (err) {
+    console.error('❌ Error sending message:', err);
+  }
+}
 
 
 function loadUserTemplateAndEnv(userIdentifier) {
@@ -49,12 +70,70 @@ function loadUserTemplateAndEnv(userIdentifier) {
   }
 }
 
+async function getTemplatePropmtFromPersonalDb() {
+  const db = await open({
+    filename: userDatabasePath,
+    driver: sqlite3.Database
+  });
+
+  // Fetch Family Data
+  const familyAndFriends = await db.all('SELECT * FROM friends');
+  const familyAndFriendsData = familyAndFriends.map(p => `${p.relation}: ${p.name}, birthday: ${p.birthday}`
+  ).join('\n');
+
+
+  const ownerCharacteristics = await db.all('SELECT * FROM characteristics');
+  const ownerCharacteristicsData = ownerCharacteristics.map(p => `${p.name}: ${p.specification}`
+  ).join('\n');
+
+  userData = {
+    ...userData,
+    familyAndFriendsData: familyAndFriendsData,
+    ownerCharacteristicsData: ownerCharacteristicsData
+  };
+
+  const templatePrompt = template(userData);
+  await db.close();
+  return templatePrompt;
+}
+
+
+async function getMessagesFromMessagesDb(conversationId) {
+  if (!conversationId) {
+    console.error('❌ No conversationId provided for fetching messages.');
+    return undefined;
+  }
+  try {
+    const db = await open({
+      filename: userMessagesDatabasePath,
+      driver: sqlite3.Database
+    });
+
+    const messages = await db.all('SELECT * FROM messages WHERE conversationId = ?', conversationId);
+    const messagesObjects = 
+      messages.map(
+        m => ({
+          role: m.role, 
+          content: m.message,
+        })
+      );
+
+
+    await db.close();
+    return messagesObjects;
+  } catch (error) {
+    console.error('❌ Error fetching messages from database:', error.message);
+    return undefined;
+  }
+}
+
+
 
 const args = minimist(process.argv.slice(2));
 console.log(chalk.blue('Arguments:'), args);
-const messageQuestion = args.question
+const messageQuestion = args.question;
+const conversationId = args?.conversationId;
 console.log(chalk.blue('Question:'), messageQuestion);
-console.log(chalk.blue('Context arg:'), args?.context);
 
 const owner = args?.owner || 'ivan';
 console.log(chalk.blue('Owner:'), owner);
@@ -64,11 +143,13 @@ let userData = null
 
 let userFolderPath = null;
 let userDatabasePath = null
+let userMessagesDatabasePath = null;
 
 
 if(owner){
   userFolderPath = path.join(USERS_BASE_DIR, owner);
   userDatabasePath = path.join(userFolderPath, PERSONAL_DATABASE_FILE);
+  userMessagesDatabasePath = path.join(userFolderPath, MESSAGES_DATABASE_FILE);
   
   let userConfig = loadUserTemplateAndEnv(owner)
 
@@ -81,59 +162,29 @@ if(owner){
   }
 }
 
-
-
-let context = [];
-try {
-  const decoded = Buffer.from(args.context, 'base64').toString('utf8');
-  context = JSON.parse(decoded);
-} catch (err) {
-  console.error('❌ Failed to decode or parse context:', err.context);
-}
-
-console.log(chalk.blue('Context:'),  context);
-
-
-
-const db = await open({
-  filename: userDatabasePath,
-  driver: sqlite3.Database
+await sendMessageToQueue({
+  owner: owner, 
+  conversationId,
+  role: 'user', 
+  message: messageQuestion
 });
 
-// Fetch Family Data
-const familyAndFriends = await db.all('SELECT * FROM friends');
-const familyAndFriendsData = familyAndFriends.map(p => 
-  `${p.relation}: ${p.name}, birthday: ${p.birthday}`
-).join('\n');
-
-
-const ownerCharacteristics = await db.all('SELECT * FROM characteristics');
-const ownerCharacteristicsData = ownerCharacteristics.map(p => 
-  `${p.name}: ${p.specification}`
-).join('\n');
-
-userData = {...userData,
-  familyAndFriendsData: familyAndFriendsData, 
-  ownerCharacteristicsData: ownerCharacteristicsData
-};
-
-const templatePrompt = template(userData)
 
 
 
-const ollama = new Ollama({ host: 'http://localhost:11434' });
+
+const templatePrompt = await getTemplatePropmtFromPersonalDb();
+const messages = await getMessagesFromMessagesDb(conversationId);
 
 
-/*
-Family and Friends Data Example: ${familyAndFriendsData}
+const ollama = new Ollama({ host: OLLAMA_URL});
 
-*/
 
 // Generate Response
 const response = await ollama.chat({
   model: 'gemma3',
   options:{
-    num_predict: 200,
+    num_predict: 300,
     temperature: 0.7,
   },
   messages: [
@@ -141,7 +192,7 @@ const response = await ollama.chat({
       role: 'system',
       content: `${templatePrompt}`
     },
-    ...context,
+    ...messages,
     {
     role: 'user',
     content: `
@@ -155,5 +206,14 @@ const response = await ollama.chat({
   requestId: nanoid() // Unique ID for tracking
 });
 
+await sendMessageToQueue({
+  owner: owner, 
+  conversationId,
+  role: 'assistant', 
+  message: response.message.content
+});
+
 console.log(chalk.green('\nResponse:'), response.message.content);
-await db.close();
+
+
+
